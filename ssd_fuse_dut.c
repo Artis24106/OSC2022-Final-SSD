@@ -5,17 +5,18 @@
   This program can be distributed under the terms of the GNU GPLv2.
   See the file COPYING.
 */
-#include <sys/types.h>
-#include <fcntl.h>
-#include <sys/stat.h>
-#include <sys/ioctl.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <ctype.h>
 #include <errno.h>
-#include <unistd.h>
-#include "ssd_fuse_header.h"
+#include <fcntl.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/ioctl.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 #include <time.h>
+#include <unistd.h>
+
+#include "ssd_fuse_header.h"
 const char* usage =
     "Usage: ssd_fuse SSD_FILE COMMAND\n"
     "\n"
@@ -26,60 +27,50 @@ const char* usage =
     "  w SIZE [OFF] : write SIZE bytes @ OFF (dfl 0) from random\n"
     "  W    : write amplification factor\n"
     "\n";
-static int do_rw(FILE* fd, int is_read, size_t size, off_t offset)
-{
+static int do_rw(FILE* fd, int is_read, size_t size, off_t offset) {
     char* buf;
     int idx;
     ssize_t ret;
     buf = calloc(1, size);
 
-    if (!buf)
-    {
+    if (!buf) {
         fprintf(stderr, "failed to allocated %zu bytes\n", size);
         return -1;
     }
-    if (is_read)
-    {
+    if (is_read) {
         printf("dut do read size %ld, off %d\n", size, (int)offset);
-        fseek( fd, offset, SEEK_SET );
-        ret = fread( buf, 1, size, fd);
-        if (ret >= 0)
-        {
+        fseek(fd, offset, SEEK_SET);
+        ret = fread(buf, 1, size, fd);
+        if (ret >= 0) {
             fwrite(buf, 1, ret, stdout);
         }
-    }
-    else
-    {
-        for ( idx = 0; idx < size; idx++)
-        {
+    } else {
+        for (idx = 0; idx < size; idx++) {
             buf[idx] = idx;
         }
         printf("dut do write size %ld, off %d\n", size, (int)offset);
-        fseek( fd, offset, SEEK_SET );
+        fseek(fd, offset, SEEK_SET);
         printf("fseek \n");
         ret = fwrite(buf, 1, size, fd);
-        //arg.size = fread(arg.buf, 1, size, stdin);
+        // arg.size = fread(arg.buf, 1, size, stdin);
         fprintf(stderr, "Writing %zu bytes\n", size);
     }
-    if (ret < 0)
-    {
+    if (ret < 0) {
         perror("ioctl");
     }
 
     free(buf);
     return ret;
 }
-int main(int argc, char** argv)
-{
-    size_t param[2] = { };
+int main(int argc, char** argv) {
+    size_t param[2] = {};
     size_t size;
     char cmd;
     char* path;
     FILE* fptr;
     int fd, i, rc;
 
-    if (argc < 3)
-    {
+    if (argc < 3) {
         goto usage;
     }
     path = argv[1];
@@ -87,26 +78,21 @@ int main(int argc, char** argv)
     cmd = argv[2][0];
     argc -= 3;
     argv += 3;
-    for (i = 0; i < argc; i++)
-    {
+    for (i = 0; i < argc; i++) {
         char* endp;
         param[i] = strtoul(argv[i], &endp, 0);
-        if (endp == argv[i] || *endp != '\0')
-        {
+        if (endp == argv[i] || *endp != '\0') {
             goto usage;
         }
     }
-    switch (cmd)
-    {
+    switch (cmd) {
         case 'l':
             fd = open(path, O_RDWR);
-            if (fd < 0)
-            {
+            if (fd < 0) {
                 perror("open");
                 return 1;
             }
-            if (ioctl(fd, SSD_GET_LOGIC_SIZE, &size))
-            {
+            if (ioctl(fd, SSD_GET_LOGIC_SIZE, &size)) {
                 perror("ioctl");
                 goto error;
             }
@@ -115,13 +101,11 @@ int main(int argc, char** argv)
             return 0;
         case 'p':
             fd = open(path, O_RDWR);
-            if (fd < 0)
-            {
+            if (fd < 0) {
                 perror("open");
                 return 1;
             }
-            if (ioctl(fd, SSD_GET_PHYSIC_SIZE, &size))
-            {
+            if (ioctl(fd, SSD_GET_PHYSIC_SIZE, &size)) {
                 perror("ioctl");
                 goto error;
             }
@@ -130,14 +114,12 @@ int main(int argc, char** argv)
             return 0;
         case 'r':
         case 'w':
-            if ( !(fptr = fopen(path, "r+")))
-            {
+            if (!(fptr = fopen(path, "r+"))) {
                 perror("open");
                 return 1;
             }
             rc = do_rw(fptr, cmd == 'r', param[0], param[1]);
-            if (rc < 0)
-            {
+            if (rc < 0) {
                 goto error;
             }
             fprintf(stderr, "transferred %d bytes \n", rc);
@@ -146,14 +128,12 @@ int main(int argc, char** argv)
             return 0;
         case 'W':
             fd = open(path, O_RDWR);
-            if (fd < 0)
-            {
+            if (fd < 0) {
                 perror("open");
                 return 1;
             }
             double wa;
-            if (ioctl(fd, SSD_GET_WA, &wa))
-            {
+            if (ioctl(fd, SSD_GET_WA, &wa)) {
                 perror("ioctl");
                 goto error;
             }
