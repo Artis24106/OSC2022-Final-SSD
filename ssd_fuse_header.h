@@ -16,6 +16,7 @@
 #define FREE_BLOCK (0xFFFFFFFF)
 #define OUT_OF_BLOCK (0xFFFF)
 #define FULL_PCA (0xFFFFFFFE)
+#define NOT_USED_PCA (0xFFFFFFFD)
 #define PAGE_PER_BLOCK (10)
 #define NAND_LOCATION "/home/artis/Homework/ssd_fuse_lab"
 

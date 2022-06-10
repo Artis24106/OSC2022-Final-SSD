@@ -15,6 +15,7 @@
 #include <time.h>
 #include <unistd.h>
 
+#include "debug.h"
 #include "ssd_fuse_header.h"
 #define SSD_NAME "ssd_file"
 enum {
@@ -120,7 +121,7 @@ static int nand_erase(int block_index) {
     return 1;
 }
 
-static unsigned int get_next_block() {
+static unsigned int get_next_block() {  // linearly find next free block (nand)
     for (int i = 0; i < PHYSICAL_NAND_NUM; i++) {
         if (valid_count[(curr_pca.fields.nand + i) % PHYSICAL_NAND_NUM] == FREE_BLOCK) {
             curr_pca.fields.nand = (curr_pca.fields.nand + i) % PHYSICAL_NAND_NUM;
@@ -144,6 +145,9 @@ static unsigned int get_next_pca() {
     if (curr_pca.fields.lba == 9) {
         int temp = get_next_block();
         if (temp == OUT_OF_BLOCK) {
+#ifdef DEBUG
+            printf(RED "out of block!!" NC);
+#endif
             return OUT_OF_BLOCK;
         } else if (temp == -EINVAL) {
             return -EINVAL;
@@ -157,11 +161,33 @@ static unsigned int get_next_pca() {
 }
 
 static int ftl_read(char* buf, size_t lba) {
-    // TODO
+#ifdef DEBUG
+    printf(BLUE "ftl_read(0x%x, %d)" NC, buf, lba);
+#endif
+    // TODO ftl_read
+    PCA_RULE pca;
+    pca.pca = L2P[lba];
+    // printf(GREEN "start nand_read(buf, 0x%x/0x%x)" NC, pca.fields.lba, pca.fields.nand);
+    nand_read(buf, pca.pca);
+    // printf(GREEN "end nand_read(buf, 0x%x/0x%x)" NC, pca.fields.lba, pca.fields.nand);
 }
 
 static int ftl_write(const char* buf, size_t lba_rnage, size_t lba) {
-    // TODO
+#ifdef DEBUG
+    printf(BLUE "ftl_write(0x%x, %d, %d)" NC, buf, lba_rnage, lba);
+#endif
+    // TODO ftl_write
+    PCA_RULE pca;
+    // pca.pca = L2P[lba];
+    // if (pca.pca == INVALID_PCA) {
+    pca.pca = get_next_pca();  // Allocate a new PCA address to write
+    L2P[lba] = pca.pca;
+    P2L[pca.fields.nand * PAGE_PER_BLOCK + pca.fields.lba] = lba;
+    // }
+#ifdef DEBUG
+    printf(BLUE "nand_write(buf, 0x%x/0x%x)" NC, pca.fields.lba, pca.fields.nand);
+#endif
+    nand_write(buf, pca.pca);
 }
 
 static int ssd_file_type(const char* path) {
@@ -202,6 +228,9 @@ static int ssd_open(const char* path, struct fuse_file_info* fi) {
     return -ENOENT;
 }
 static int ssd_do_read(char* buf, size_t size, off_t offset) {
+#ifdef DEBUG
+    printf(BLUE "ssd_do_read(0x%x, %d, 0x%x)" NC, buf, size, offset);
+#endif
     int tmp_lba, tmp_lba_range, rst;
     char* tmp_buf;
 
@@ -217,9 +246,11 @@ static int ssd_do_read(char* buf, size_t size, off_t offset) {
     tmp_lba = offset / 512;
     tmp_lba_range = (offset + size - 1) / 512 - (tmp_lba) + 1;
     tmp_buf = calloc(tmp_lba_range * 512, sizeof(char));
+    printf(RED "tmp_lba: %d, range: %d" NC, tmp_lba, tmp_lba_range);
 
     for (int i = 0; i < tmp_lba_range; i++) {
-        // TODO
+        // TODO ssd_do_read
+        ftl_read(tmp_buf + i * 512, tmp_lba + i);
     }
 
     memcpy(buf, tmp_buf + offset % 512, size);
@@ -240,20 +271,85 @@ static int ssd_do_write(const char* buf, size_t size, off_t offset) {
     int idx, curr_size, remain_size, rst;
     char* tmp_buf;
 
+#ifdef DEBUG
+    printf(BLUE "ssd_do_write(0x%x, %d, 0x%x)" NC, buf, size, offset);
+#endif
     host_write_size += size;
     if (ssd_expand(offset + size) != 0) {
+        printf(GREEN "WUT" NC);
         return -ENOMEM;
     }
 
     tmp_lba = offset / 512;
     tmp_lba_range = (offset + size - 1) / 512 - (tmp_lba) + 1;
-
+    printf(RED "tmp_lba: %d, range: %d" NC, tmp_lba, tmp_lba_range);
     process_size = 0;
     remain_size = size;
     curr_size = 0;
+
+    // TODO ssd_do_write
+    char* temp_buf = malloc(sizeof(char) * 512);
+    int buf_off = offset % 512;
+    int buf_first_size = 512 - buf_off;
+
+    // traverse
     for (idx = 0; idx < tmp_lba_range; idx++) {
-        // TODO
+        memset(temp_buf, 0, sizeof(char) * 512);
+
+        int curr_lba = tmp_lba + idx;
+        // read
+        PCA_RULE pca;
+        pca.pca = L2P[curr_lba];
+        if (pca.pca != INVALID_PCA) {  // if there is data in current lba
+            ftl_read(temp_buf, curr_lba);
+        }
+
+        // modify
+        if (idx == 0) {  // the first block -> alignment problem
+            printf(GREEN "memcpy(0x%x, 0x%x, %d)" NC, temp_buf + buf_off, buf, buf_first_size);
+            memcpy(temp_buf + buf_off, buf, 512 - buf_off);
+        } else {
+            int curr_idx = buf_first_size + 512 * (idx - 1);
+            printf(GREEN "memcpy(0x%x, 0x%x, %d)" NC, temp_buf, buf + curr_idx, (size - curr_idx) >= 512 ? 512 : (size - curr_idx));
+            memcpy(temp_buf, buf + curr_idx, (size - curr_idx) >= 512 ? 512 : (size - curr_idx));
+        }
+
+        // write
+        ftl_write(temp_buf, tmp_lba_range, curr_lba);
+
+        // set not used
+        if (pca.pca != INVALID_PCA) {
+            PCA_RULE new_pca, old_pca;
+            // char* gc_buf = malloc(sizeof(char) * 512);
+
+            // // GC
+            // for (int lba = (tmp_lba / 10) * 10; lba < (tmp_lba / 10) * 10 + 10; lba++) {
+            //     if (lba == tmp_lba) continue;
+
+            //     old_pca.pca = L2P[lba];
+            //     new_pca.pca = get_next_pca();
+
+            //     if (old_pca.pca != INVALID_PCA) {
+            //         L2P[lba] = new_pca.pca;
+            //         P2L[new_pca.fields.nand * PAGE_PER_BLOCK + new_pca.fields.lba] = lba;
+            //         nand_read(gc_buf, old_pca.pca);
+            //         nand_write(gc_buf, new_pca.pca);
+            //     }
+            // }
+
+            // // erase the old block
+            // nand_erase(pca.fields.nand);
+
+            //
+            P2L[pca.fields.nand * PAGE_PER_BLOCK + pca.fields.lba] = NOT_USED_PCA;
+            // for (int i = 0; i < PAGE_PER_BLOCK; i++) {
+            //     P2L[pca.fields.nand * PAGE_PER_BLOCK + i] = INVALID_PCA;
+            // }
+        }
+        show_L2P();
+        show_P2L();
     }
+    free(temp_buf);
     return size;
 }
 static int ssd_write(const char* path, const char* buf, size_t size,
