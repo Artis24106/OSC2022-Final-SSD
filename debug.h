@@ -8,7 +8,7 @@
 #define NC "\x1b[0m\n"
 #define NC2 "\x1b[0m"
 
-extern unsigned int *L2P, *P2L;
+extern unsigned int *L2P, *P2L, *valid_count, *invalid_count;
 
 void show_L2P() {
     printf(BLUE "show_L2P()\n");
@@ -35,9 +35,12 @@ void show_P2L() {
     char* t_red = "\x1b[38;5;1m";
     char* t_yellow = "\x1b[38;5;3m";
     char* t_blue = "\x1b[38;5;4m";
+    char* t_green = "\x1b[38;5;2m";
     unsigned int pca;
     for (int i = 0; i < 13; i++) {
-        printf("- [0x%x] ", i);
+        printf("- [0x%x", i);
+        printf("%s/0x%x", t_green, valid_count[i]);
+        printf("%s/0x%x%s] ", t_red, invalid_count[i], t_blue);
         for (int j = 0; j < 10; j++) {
             pca = P2L[10 * i + j];
             if (pca == 0xffffffff) {
@@ -45,7 +48,7 @@ void show_P2L() {
             } else if (pca == 0xfffffffd) {
                 printf("%sNOT_USE%s, ", t_yellow, t_blue);
             } else {
-                printf("0x%x/0x%x, ", pca / 10, pca % 10);
+                printf("%s0x%x/0x%x, ", t_blue, pca / 10, pca % 10);
             }
         }
         printf("\n");
