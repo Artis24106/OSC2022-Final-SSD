@@ -103,6 +103,7 @@ static int nand_write(const char* buf, int pca) {
         fwrite(buf, 1, 512, fptr);
         fclose(fptr);
         physic_size++;
+        if (valid_count[my_pca.fields.nand] == FREE_BLOCK) valid_count[my_pca.fields.nand] = 0;  // XXX: garbage code
         valid_count[my_pca.fields.nand]++;
         invalid_count[my_pca.fields.nand]--;
     } else {
@@ -154,9 +155,9 @@ static unsigned int get_next_pca() {
     if (curr_pca.fields.lba == 9) {
         int temp = get_next_block();
         if (temp == OUT_OF_BLOCK) {
-#ifdef DEBUG
+            // #ifdef DEBUG
             printf(RED "out of block!!" NC);
-#endif
+            // #endif
             return OUT_OF_BLOCK;
         } else if (temp == -EINVAL) {
             return -EINVAL;
@@ -331,6 +332,36 @@ static unsigned char gc_page_copy(size_t from_pca, size_t to_pca) {
     get_next_block();
 }
 
+static unsigned char check_gc_page_copy() {
+    // OPT: if there exists an empty block, should not GC
+    int empty_block_cnt = 0;
+    for (int i = 0; i < PHYSICAL_NAND_NUM; i++) {
+        if (invalid_count[i] == PAGE_PER_BLOCK) empty_block_cnt += 1;
+    }
+    if (empty_block_cnt > 0) return 0;
+
+    // OPT: if there exists some pages be wasted, should not GC
+    int valid_cnt, invalid_cnt;
+    for (int i = 0; i < PHYSICAL_NAND_NUM; i++) {
+        for (int j = i + 1; j < PHYSICAL_NAND_NUM; j++) {
+            // case 1
+            valid_cnt = valid_count[i];
+            invalid_cnt = invalid_count[j];
+            if (valid_cnt > PAGE_PER_BLOCK || invalid_cnt > PAGE_PER_BLOCK) goto case_2;
+            if (invalid_cnt - valid_cnt > 0) return 0;
+
+        case_2:
+            // case 2
+            valid_cnt = valid_count[j];
+            invalid_cnt = invalid_count[i];
+            if (valid_cnt > PAGE_PER_BLOCK || invalid_cnt > PAGE_PER_BLOCK) continue;
+            if (invalid_cnt - valid_cnt > 0) return 0;
+        }
+    }
+
+    return 1;
+}
+
 static int ssd_do_write(const char* buf, size_t size, off_t offset) {
     int tmp_lba, tmp_lba_range, process_size;
     int idx, curr_size, remain_size, rst;
@@ -362,22 +393,14 @@ static int ssd_do_write(const char* buf, size_t size, off_t offset) {
         memset(temp_buf, 0, sizeof(char) * 512);
 
         int curr_lba = tmp_lba + idx;
-        // read
+        /* read */
         PCA_RULE pca;
         pca.pca = L2P[curr_lba];
         if (pca.pca != INVALID_PCA) {  // if there is data in current lba
             ftl_read(temp_buf, curr_lba);
         }
 
-        // modify
-        // if (idx == 0) {  // the first block -> alignment problem
-        //     printf(GREEN "memcpy(0x%x, 0x%x, %d)" NC, temp_buf + seek_off, buf, buf_first_size);
-        //     memcpy(temp_buf + seek_off, buf, 512 - seek_off);
-        // } else {
-        //     int curr_idx = buf_first_size + 512 * (idx - 1);
-        //     printf(GREEN "memcpy(0x%x, 0x%x, %d)" NC, temp_buf, buf + curr_idx, (size - curr_idx) >= 512 ? 512 : (size - curr_idx));
-        //     memcpy(temp_buf, buf + curr_idx, (size - curr_idx) >= 512 ? 512 : (size - curr_idx));
-        // }
+        /* modify */
         if (idx == 0 && idx == tmp_lba_range - 1) {
             temp_buf_ptr = temp_buf + seek_off;
             from_buf_ptr = buf;
@@ -397,12 +420,18 @@ static int ssd_do_write(const char* buf, size_t size, off_t offset) {
             from_buf_ptr = buf + curr_idx;
             temp_size = 512;
         }
+
+        // OPT: if temp_buf not changed, just skip ftl_write & GC
+        if (memcmp(temp_buf_ptr, from_buf_ptr, temp_size) == 0) {
+            continue;
+        }
+
 #ifdef DEBUG
         printf(GREEN "memcpy(0x%x, 0x%x, %d)" NC, temp_buf_ptr, from_buf_ptr, temp_size);
 #endif
         memcpy(temp_buf_ptr, from_buf_ptr, temp_size);
 
-        // write
+        /* write */
         ftl_write(temp_buf, tmp_lba_range, curr_lba);
 
         // set INVALID_PCA to NOT_USED_PCA
@@ -412,11 +441,15 @@ static int ssd_do_write(const char* buf, size_t size, off_t offset) {
         }
 
 #ifdef DEBUG
-        printf(GREEN "-------------------" NC);
         // show_L2P();
         // show_P2L();
 #endif
         // GC: merge two blocks
+        if (check_gc_page_copy() == 0) goto end_of_gc_merge;
+
+#ifdef DEBUG
+        printf(RED "GC!!!!!!!!!" NC);
+#endif
         for (int i = 0; i < PHYSICAL_NAND_NUM; i++) {
             for (int j = i + 1; j < PHYSICAL_NAND_NUM; j++) {
                 if (gc_page_copy(i, j)) goto end_of_gc_merge;
@@ -430,6 +463,7 @@ static int ssd_do_write(const char* buf, size_t size, off_t offset) {
             if (valid_count[i] == 0) nand_erase(i);
         }
 #ifdef DEBUG
+        printf(GREEN "-------------------" NC);
         show_L2P();
         show_P2L();
 #endif
