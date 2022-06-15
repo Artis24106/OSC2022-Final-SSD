@@ -16,3 +16,5 @@ clean:
 	-fusermount -u ${MOUNT_DIR}
 	-umount ${MOUNT_DIR}
 	rm -rf ${MOUNT_DIR}
+	-rm ssd_fuse
+	-rm ssd_fuse_dut
