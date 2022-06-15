@@ -24,11 +24,11 @@ make clean
 
 ## Implementation
 ### # Read
-- `ssd_read` -> `ssd_do_read` -> `ftl_read` -> `nand_read`
+> `ssd_read` -> `ssd_do_read` -> `ftl_read` -> `nand_read`
 
 ### # Write
-- `ssd_write` -> `ssd_do_write` -> `ftl_write` -> `nand_write`
-- When doing `read-modify-write` and there is nothing to modify in the page. Simply skip writing this page.
+> `ssd_write` -> `ssd_do_write` -> `ftl_write` -> `nand_write`
+- When doing `read-modify-write` and there is no modification. Simply skip writing this page.
 
 ### # Garbage Collection (GC)
 - Once all the pages in one block are not `INVALID_PCA` and none of them is logged in `L2P`. Erase the block.
