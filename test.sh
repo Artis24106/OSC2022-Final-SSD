@@ -38,9 +38,9 @@ case "$1" in
         ;;
     "test3")
         cat /dev/urandom | tr -dc '[:alpha:][:digit:]' | head -c 51200 | tee ${SSD_FILE} > ${GOLDEN} 2> /dev/null
-        cat /dev/urandom | tr -dc '[:alpha:][:digit:]' | head -c 512 > ${TEMP}
         for i in $(seq 0 30)
         do
+            cat /dev/urandom | tr -dc '[:alpha:][:digit:]' | head -c 512 > ${TEMP}
             # ./ssd_fuse_dut ${SSD_FILE} w 100 0
             # ./ssd_fuse_dut ${GOLDEN} w 100 0
             dd if=${TEMP} iflag=skip_bytes skip=0 of=${GOLDEN} oflag=seek_bytes seek=0 bs=100 count=1 conv=notrunc 2> /dev/null
