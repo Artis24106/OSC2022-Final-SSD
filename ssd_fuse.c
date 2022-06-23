@@ -156,7 +156,8 @@ static unsigned int get_next_pca() {
         int temp = get_next_block();
         if (temp == OUT_OF_BLOCK) {
             // #ifdef DEBUG
-            printf(RED "out of block!!" NC);
+            // printf(RED "out of block!!" NC);
+            // exit(0);
             // #endif
             return OUT_OF_BLOCK;
         } else if (temp == -EINVAL) {
@@ -444,8 +445,9 @@ static int ssd_do_write(const char* buf, size_t size, off_t offset) {
         // show_L2P();
         // show_P2L();
 #endif
-        // GC: merge two blocks
-        if (check_gc_page_copy() == 0) goto end_of_gc_merge;
+
+        // // GC: merge two blocks
+        // if (check_gc_page_copy() == 0) goto end_of_gc_merge;
 
 #ifdef DEBUG
         printf(RED "GC!!!!!!!!!" NC);
